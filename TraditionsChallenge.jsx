@@ -254,6 +254,8 @@ export default function TraditionsChallenge() {
   const [showWhy, setShowWhy] = useState(false);
   const [pts, setPts] = useState(null);
   const [answered, setAnswered] = useState(0);
+  const [reviewLog, setReviewLog] = useState([]);
+  const [showReview, setShowReview] = useState(false);
 
   // Progress & leaderboard
   const [prog, setProg] = useState(defaultProgress());
@@ -340,17 +342,36 @@ export default function TraditionsChallenge() {
   }, [prog]);
 
   // ── Start game ────────────────────────────────────────────────────────────
+  const shuffleOptions = (q) => {
+    // Only shuffle questions that have options (not true/false)
+    if (!q.en.options) return q;
+    const shuffleFor = (langData) => {
+      const indexed = langData.options.map((opt, i) => ({opt, isAnswer: i === langData.answer}));
+      for (let i = indexed.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indexed[i], indexed[j]] = [indexed[j], indexed[i]];
+      }
+      return {
+        ...langData,
+        options: indexed.map(x => x.opt),
+        answer: indexed.findIndex(x => x.isAnswer),
+      };
+    };
+    return {...q, en: shuffleFor(q.en), sn: shuffleFor(q.sn)};
+  };
+
   const startGame = useCallback((sec, md, practice=false) => {
     const qs = [...QUESTIONS[sec][md]].sort((a,b) => {
       const o = {easy:0,medium:1,hard:2};
       return o[a.difficulty] - o[b.difficulty];
-    });
+    }).map(shuffleOptions);
     const first = qs[0];
     const tm = DIFF_TIMER[first?.difficulty] || 20;
     setQuestions(qs); setQIdx(0); setChosen(null); setCorrect(null);
     setScore(0); setStreak(0); setBestStreak(0);
     setTimer(tm); setTimerMax(tm); setTimerOn(true);
     setShowWhy(false); setPts(null); setAnswered(0);
+    setReviewLog([]); setShowReview(false);
     setSubmitted(false); setSubmitMsg('');
     setSection(sec); setMode(md); setIsPractice(practice);
     setScreen('game');
@@ -387,6 +408,7 @@ export default function TraditionsChallenge() {
     } else { setStreak(0); }
     setPts({base,spd,strk});
     setAnswered(a => a+1);
+    setReviewLog(log => [...log, {q, chosen: ans ?? -1, correct: ok, lang}]);
   }, [questions, qIdx, lang, timer, timerMax, streak, bestStreak]);
 
   // ── Next question ─────────────────────────────────────────────────────────
@@ -438,7 +460,8 @@ export default function TraditionsChallenge() {
     const code = genCode();
     const qs = Object.values(QUESTIONS[grpSection]).flat()
       .sort((a,b) => ({easy:0,medium:1,hard:2}[a.difficulty]-{easy:0,medium:1,hard:2}[b.difficulty]))
-      .slice(0,10);
+      .slice(0,10)
+      .map(shuffleOptions);
     setHostQs(qs); setGrpCode(code);
     const state = { host:grpName.trim(), status:'lobby', section:grpSection,
       players:[{name:grpName.trim(),id:'host',score:0}],
@@ -492,9 +515,15 @@ export default function TraditionsChallenge() {
     if (!q) return;
     const ok = ans === q[lang].answer;
     const dp = {easy:10,medium:20,hard:35};
-    const p = ok ? (dp[q.difficulty]||10) : 0;
-    const key = `jrm-group-ans:${grpCode}:${grpName}:${grpState.currentQuestion}`;
-    await safeSet(key, {player:grpName, question:grpState.currentQuestion, correct:ok, pts:p}, true);
+    const pts = ok ? (dp[q.difficulty]||10) : 0;
+    // Write score back into the shared game state so leaderboard shows real scores
+    const latest = await safeGet(`jrm-group:${grpCode}`, true);
+    if (latest) {
+      const updated = {...latest, players: latest.players.map(p =>
+        p.name === grpName ? {...p, score: (p.score||0) + pts} : p
+      )};
+      await safeSet(`jrm-group:${grpCode}`, updated, true);
+    }
   }, [grpAns, grpState, lang, grpCode, grpName]);
 
   useEffect(() => {
@@ -503,7 +532,8 @@ export default function TraditionsChallenge() {
 
   // ── Perf label ────────────────────────────────────────────────────────────
   const perf = () => {
-    const max = questions.length*35;
+    const dp = {easy:10, medium:20, hard:35};
+    const max = questions.reduce((sum, q) => sum + (dp[q.difficulty]||10), 0);
     const r = max > 0 ? score/max : 0;
     if (r>=0.9) return {emoji:'🏆', label:t.perfect};
     if (r>=0.65) return {emoji:'⭐', label:t.great};
@@ -530,7 +560,9 @@ export default function TraditionsChallenge() {
         </div>
 
         <div className="fu" style={{textAlign:'center',padding:'28px 0 24px'}}>
-          <div style={{fontSize:52,marginBottom:10}}>✝️</div>
+          <div style={{marginBottom:10,display:'flex',justifyContent:'center'}}>
+            <img src="./new logo.JPG" alt="Royal Kingdom of Ziklag" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover',border:`3px solid ${GOLD}`,boxShadow:`0 0 18px ${GOLD}55`}} />
+          </div>
           <h1 style={S.h1}>{t.appTitle}</h1>
           <p style={{fontSize:13,color:muted,marginTop:4,letterSpacing:3,textTransform:'uppercase',fontWeight:700}}>
             {t.appSubtitle}
@@ -762,7 +794,7 @@ export default function TraditionsChallenge() {
         <div style={S.inner}>
           {/* Top bar */}
           <div style={{...S.row(),alignItems:'center',justifyContent:'space-between',paddingTop:14,marginBottom:14}}>
-            <button onClick={()=>{ clearTimeout(timerRef.current); setScreen('modeSelect'); }} style={S.sBtn({width:'auto',padding:'8px 14px',fontSize:13})}>
+            <button onClick={()=>{ if(window.confirm('Quit this round? Your progress will not be saved.')){ clearTimeout(timerRef.current); setScreen('modeSelect'); } }} style={S.sBtn({width:'auto',padding:'8px 14px',fontSize:13})}>
               ✕
             </button>
             <div style={{display:'flex',gap:14,alignItems:'center'}}>
@@ -888,6 +920,67 @@ export default function TraditionsChallenge() {
             <button onClick={()=>startGame(section,mode,isPractice)} style={S.sBtn()}>🔄 {t.tryAgain}</button>
             <button onClick={()=>setScreen('home')} style={S.pBtn()}>🏠 {t.home}</button>
           </div>
+
+          {/* Answer review toggle */}
+          <button onClick={()=>setShowReview(r=>!r)}
+            style={{...S.sBtn({marginTop:14})}}>
+            {showReview ? '▲ Hide Review' : '▼ Review Answers'}
+          </button>
+
+          {showReview && (
+            <div style={{marginTop:14, display:'flex', flexDirection:'column', gap:10}}>
+              {reviewLog.map((entry, i) => {
+                const qd = entry.q[entry.lang];
+                const isTimeout = entry.chosen === -1;
+                const color = entry.correct ? GREEN : RED;
+                return (
+                  <div key={i} className="fu" style={{...S.card({padding:'14px 16px',
+                    border:`1px solid ${color}44`, background:`${color}0d`}),
+                    animationDelay:`${i*0.04}s`}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                      <span style={{fontSize:12,fontWeight:700,color:muted}}>Q{i+1} · {entry.q.difficulty}</span>
+                      <span style={{fontSize:13,fontWeight:700,color}}>{entry.correct ? '✓ Correct' : isTimeout ? '⏱ Timed out' : '✗ Wrong'}</span>
+                    </div>
+                    <p style={{fontSize:13,fontWeight:600,lineHeight:1.5,marginBottom:8}}>{qd.q}</p>
+                    {qd.options ? (
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                        {qd.options.map((opt,oi)=>{
+                          const isAnswer = oi === qd.answer;
+                          const wasChosen = oi === entry.chosen;
+                          return (
+                            <div key={oi} style={{fontSize:12,padding:'6px 10px',borderRadius:8,
+                              background: isAnswer ? `${GREEN}22` : wasChosen && !entry.correct ? `${RED}22` : 'transparent',
+                              color: isAnswer ? GREEN : wasChosen && !entry.correct ? RED : muted,
+                              fontWeight: isAnswer || wasChosen ? 700 : 400,
+                              border:`1px solid ${isAnswer ? GREEN+'44' : wasChosen && !entry.correct ? RED+'44' : 'transparent'}`}}>
+                              {isAnswer ? '✓ ' : wasChosen && !entry.correct ? '✗ ' : '   '}{opt}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{display:'flex',gap:8}}>
+                        {[true,false].map(v=>{
+                          const isAnswer = v === qd.answer;
+                          const wasChosen = v === entry.chosen;
+                          return (
+                            <div key={String(v)} style={{flex:1,textAlign:'center',padding:'8px',borderRadius:8,
+                              background: isAnswer ? `${GREEN}22` : wasChosen && !entry.correct ? `${RED}22` : 'transparent',
+                              color: isAnswer ? GREEN : wasChosen && !entry.correct ? RED : muted,
+                              fontWeight:700,fontSize:13,
+                              border:`1px solid ${isAnswer ? GREEN+'44' : wasChosen && !entry.correct ? RED+'44' : 'transparent'}`}}>
+                              {isAnswer ? '✓ ' : wasChosen && !entry.correct ? '✗ ' : ''}{v ? t.true : t.false}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <p style={{fontSize:11,color:muted,marginTop:8,lineHeight:1.5,fontStyle:'italic'}}>{qd.explanation}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1098,13 +1191,22 @@ export default function TraditionsChallenge() {
                   <p style={{fontSize:16,fontWeight:600,lineHeight:1.6}}>{gq[lang]?.q}</p>
                 </div>
                 <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
-                  {gq[lang]?.options?.map((op,i)=>(
-                    <div key={i} style={{...S.card({padding:'12px 14px',
-                      border:`2px solid ${i===gq[lang].answer?GREEN:cardBorder}`}),
-                      color:i===gq[lang].answer?GREEN:fg,fontWeight:i===gq[lang].answer?700:400,fontSize:14}}>
-                      {op}
-                    </div>
-                  ))}
+                  {gq[lang]?.options
+                    ? gq[lang].options.map((op,i)=>(
+                        <div key={i} style={{...S.card({padding:'12px 14px',
+                          border:`2px solid ${i===gq[lang].answer?GREEN:cardBorder}`}),
+                          color:i===gq[lang].answer?GREEN:fg,fontWeight:i===gq[lang].answer?700:400,fontSize:14}}>
+                          {op}
+                        </div>
+                      ))
+                    : [true,false].map((v,i)=>(
+                        <div key={i} style={{...S.card({padding:'16px',textAlign:'center',
+                          border:`2px solid ${v===gq[lang].answer?GREEN:cardBorder}`}),
+                          color:v===gq[lang].answer?GREEN:fg,fontWeight:700,fontSize:16}}>
+                          {v ? t.true : t.false}
+                        </div>
+                      ))
+                  }
                 </div>
                 <button onClick={hostNext} style={S.pBtn({padding:'14px'})}>
                   {hostIdx+1 < (grpState?.questions?.length||0) ? '→ Next Question' : '🏁 End Game'}
@@ -1206,19 +1308,34 @@ function PlayerGameView({ grpState, lang, t, grpAns, playerAnswer, S, cardBorder
         <p style={{fontSize:15,fontWeight:600,lineHeight:1.65,color:fg}}>{qd?.q}</p>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
-        {qd?.options?.map((op,i)=>{
-          const picked = grpAns === i;
-          return (
-            <button key={i} disabled={grpAns!==null}
-              style={{background:picked?`${GREEN}22`:'rgba(255,255,255,0.045)',
-                border:`2px solid ${picked?GREEN:'rgba(255,255,255,0.09)'}`,
-                borderRadius:12,padding:'14px 16px',textAlign:'left',color:picked?GREEN:fg,
-                fontWeight:picked?700:400,fontSize:14,cursor:grpAns!==null?'default':'pointer'}}
-              onClick={()=>playerAnswer(i)}>
-              {op}
-            </button>
-          );
-        })}
+        {qd?.options
+          ? qd.options.map((op,i)=>{
+              const picked = grpAns === i;
+              return (
+                <button key={i} disabled={grpAns!==null}
+                  style={{background:picked?`${GREEN}22`:'rgba(255,255,255,0.045)',
+                    border:`2px solid ${picked?GREEN:'rgba(255,255,255,0.09)'}`,
+                    borderRadius:12,padding:'14px 16px',textAlign:'left',color:picked?GREEN:fg,
+                    fontWeight:picked?700:400,fontSize:14,cursor:grpAns!==null?'default':'pointer'}}
+                  onClick={()=>playerAnswer(i)}>
+                  {op}
+                </button>
+              );
+            })
+          : [true,false].map((v,i)=>{
+              const picked = grpAns === v;
+              return (
+                <button key={i} disabled={grpAns!==null}
+                  style={{background:picked?`${GREEN}22`:'rgba(255,255,255,0.045)',
+                    border:`2px solid ${picked?GREEN:'rgba(255,255,255,0.09)'}`,
+                    borderRadius:12,padding:'20px',textAlign:'center',color:picked?GREEN:fg,
+                    fontWeight:700,fontSize:16,cursor:grpAns!==null?'default':'pointer'}}
+                  onClick={()=>playerAnswer(v)}>
+                  {v ? t.true : t.false}
+                </button>
+              );
+            })
+        }
       </div>
     </div>
   );
