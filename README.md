@@ -6,7 +6,9 @@ A production-ready quiz web app built for **JRM (Jesus Revelation Ministries)** 
 
 ## 🎯 Play Online
 
-👉 **[Launch the App](https://mahwaya.github.io/jrm-traditions-challenge/)**
+👉 **[Play Now — https://bit.ly/YFJTraditions](https://bit.ly/YFJTraditions)**
+
+> Direct link: https://mahwaya.github.io/jrm-traditions-challenge/
 
 ---
 
