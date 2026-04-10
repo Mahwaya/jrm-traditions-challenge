@@ -561,7 +561,7 @@ export default function TraditionsChallenge() {
 
         <div className="fu" style={{textAlign:'center',padding:'28px 0 24px'}}>
           <div style={{marginBottom:10,display:'flex',justifyContent:'center'}}>
-            <img src="./new-logo.JPG" alt="Royal Kingdom of Ziklag" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover',border:`3px solid ${GOLD}`,boxShadow:`0 0 18px ${GOLD}55`}} />
+            <img src="./new-logo.jpg" alt="Royal Kingdom of Ziklag" style={{width:110,height:110,borderRadius:'50%',objectFit:'cover',border:`3px solid ${GOLD}`,boxShadow:`0 0 18px ${GOLD}55`}} />
           </div>
           <h1 style={S.h1}>{t.appTitle}</h1>
           <p style={{fontSize:13,color:muted,marginTop:4,letterSpacing:3,textTransform:'uppercase',fontWeight:700}}>
